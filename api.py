@@ -128,6 +128,7 @@ PersistentKeepalive = 25
             return '10.13.13.2'
 
 if __name__ == '__main__':
-    server = HTTPServer(('0.0.0.0', 8080), VPNHandler)
-    print('API Server running on port 8080')
+    port = int(os.environ.get('PORT', 8080))
+    server = HTTPServer(('0.0.0.0', port), VPNHandler)
+    print(f'API Server running on port {port}')
     server.serve_forever()
