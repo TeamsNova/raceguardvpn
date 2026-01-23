@@ -1,56 +1,95 @@
-# RaceGuard VPN Server
+# RaceGuard SOCKS5 Proxy Server
 
-WireGuard VPN сервер для Railway.app
+SOCKS5 прокси сервер для Railway.app - **полностью бесплатно!**
+
+## Возможности:
+
+- ✅ SOCKS5 прокси для обхода блокировок
+- ✅ Работает с браузерами, Telegram, Discord, Steam
+- ✅ 100GB трафика в месяц бесплатно (на 1 аккаунт)
+- ✅ Можно создать 9 аккаунтов = 900GB трафика
+- ✅ HTTP API для управления пользователями
 
 ## Деплой на Railway:
 
-1. Создай новый репозиторий на GitHub
-2. Загрузи эти файлы в репозиторий
-3. Зайди на railway.app
-4. Нажми "New Project" → "Deploy from GitHub repo"
-5. Выбери свой репозиторий
-6. Railway автоматически задеплоит проект
+1. Зайди на railway.app
+2. Нажми "New Project" → "Deploy from GitHub repo"
+3. Выбери репозиторий `TeamsNova/raceguardvpn`
+4. Railway автоматически задеплоит проект
+5. Получи домен в Settings → Networking
 
 ## API Endpoints:
 
 ### GET /health
-Проверка работоспособности сервера
+Проверка работоспособности
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "type": "socks5"
+}
+```
 
 ### GET /server-info
-Получить информацию о сервере (публичный ключ, endpoint)
+Информация о сервере
 
-### POST /add-client
-Добавить нового клиента
+**Response:**
+```json
+{
+  "type": "socks5",
+  "host": "raceguardvpn-production.up.railway.app",
+  "port": 1080,
+  "users": 0
+}
+```
+
+### POST /add-user
+Добавить пользователя
 
 **Request:**
 ```json
 {
-  "name": "client1"
+  "username": "user123",
+  "password": "pass123"
 }
 ```
 
 **Response:**
 ```json
 {
-  "config": "...",
-  "client_ip": "10.13.13.2",
-  "private_key": "...",
-  "public_key": "..."
+  "username": "user123",
+  "host": "raceguardvpn-production.up.railway.app",
+  "port": 1080,
+  "config": "socks5://user123:pass123@raceguardvpn-production.up.railway.app:1080"
 }
 ```
 
 ## Использование:
 
-1. После деплоя получи URL проекта на Railway
-2. Вызови `/add-client` для создания конфига клиента
-3. Используй полученный конфиг в WireGuard клиенте
+### В браузере (Chrome/Edge):
+1. Настройки → Прокси-сервер
+2. SOCKS5: `raceguardvpn-production.up.railway.app:1080`
 
-## Порты:
+### В Telegram:
+1. Настройки → Данные и память → Прокси
+2. SOCKS5
+3. Сервер: `raceguardvpn-production.up.railway.app`
+4. Порт: `1080`
 
-- 51820/udp - WireGuard
-- 8080/tcp - API сервер
+### В приложении:
+```python
+import socks
+import socket
 
-## Переменные окружения:
+socks.set_default_proxy(socks.SOCKS5, "raceguardvpn-production.up.railway.app", 1080)
+socket.socket = socks.socksocket
+```
 
-Railway автоматически устанавливает:
-- `RAILWAY_PUBLIC_DOMAIN` - домен проекта
+## Лимиты Railway (бесплатно):
+
+- $5 кредитов в месяц
+- 500 часов выполнения
+- 100GB исходящего трафика
+
+**Совет:** Создай 9 аккаунтов (6 Google + 3 GitHub) = 900GB трафика!

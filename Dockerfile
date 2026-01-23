@@ -1,16 +1,15 @@
-FROM linuxserver/wireguard:latest
+FROM python:3.11-slim
 
-# Установка дополнительных пакетов
-RUN apk add --no-cache python3 py3-pip iptables
+# Установка зависимостей
+RUN pip install --no-cache-dir aiohttp pysocks
 
-# Копируем скрипты
-COPY start.sh /start.sh
-COPY api.py /api.py
+# Копируем файлы
+COPY proxy_server.py /app/proxy_server.py
+COPY api.py /app/api.py
 
-RUN chmod +x /start.sh
+WORKDIR /app
 
-# Порты
-EXPOSE 51820/udp
-EXPOSE 8080/tcp
+# Порт для API и SOCKS5
+EXPOSE 8080
 
-CMD ["/start.sh"]
+CMD ["python", "proxy_server.py"]
