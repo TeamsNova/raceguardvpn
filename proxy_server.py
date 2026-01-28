@@ -1,19 +1,52 @@
 #!/usr/bin/env python3
-import asyncio
 import socket
 import os
 import json
+import base64
+import select
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
-import threading
 import urllib.request
 
 # База данных пользователей
 USERS = {}
 
 class HTTPProxyHandler(BaseHTTPRequestHandler):
+    def _check_auth(self):
+        """Проверка Basic Authentication через Proxy-Authorization"""
+        if not USERS:
+            return True
+        
+        auth_header = self.headers.get('Proxy-Authorization', '')
+        if not auth_header.startswith('Basic '):
+            return False
+        
+        try:
+            credentials = base64.b64decode(auth_header[6:]).decode('utf-8')
+            username, password = credentials.split(':', 1)
+            
+            if username in USERS and USERS[username]['password'] == password:
+                return True
+        except Exception as e:
+            print(f"Auth error: {e}")
+        
+        return False
+    
+    def _send_auth_required(self):
+        """Отправка 407 Proxy Authentication Required"""
+        self.send_response(407)
+        self.send_header('Proxy-Authenticate', 'Basic realm="Proxy"')
+        self.send_header('Content-Type', 'text/plain')
+        self.end_headers()
+        self.wfile.write(b'Proxy Authentication Required')
+    
     def do_CONNECT(self):
         """Handle HTTPS CONNECT requests"""
+        if not self._check_auth():
+            self._send_auth_required()
+            return
+        
+        target_sock = None
         try:
             # Парсим хост и порт
             host, port = self.path.split(':')
@@ -27,37 +60,47 @@ class HTTPProxyHandler(BaseHTTPRequestHandler):
             self.send_response(200, 'Connection Established')
             self.end_headers()
             
-            # Пересылаем данные в обе стороны
+            # Пересылаем данные в обе стороны используя select
             self.connection.setblocking(0)
             target_sock.setblocking(0)
             
+            sockets = [self.connection, target_sock]
+            
             while True:
-                # От клиента к серверу
-                try:
-                    data = self.connection.recv(8192)
-                    if data:
-                        target_sock.sendall(data)
-                    else:
-                        break
-                except:
-                    pass
+                readable, _, exceptional = select.select(sockets, [], sockets, 1.0)
                 
-                # От сервера к клиенту
-                try:
-                    data = target_sock.recv(8192)
-                    if data:
-                        self.connection.sendall(data)
-                    else:
-                        break
-                except:
-                    pass
+                if exceptional:
+                    break
+                
+                for sock in readable:
+                    if sock is self.connection:
+                        # От клиента к серверу
+                        try:
+                            data = self.connection.recv(8192)
+                            if data:
+                                target_sock.sendall(data)
+                            else:
+                                return
+                        except:
+                            return
+                    elif sock is target_sock:
+                        # От сервера к клиенту
+                        try:
+                            data = target_sock.recv(8192)
+                            if data:
+                                self.connection.sendall(data)
+                            else:
+                                return
+                        except:
+                            return
         except Exception as e:
             print(f"CONNECT error: {e}")
         finally:
-            try:
-                target_sock.close()
-            except:
-                pass
+            if target_sock:
+                try:
+                    target_sock.close()
+                except:
+                    pass
     
     def do_GET(self):
         """Handle HTTP GET requests"""
@@ -83,6 +126,11 @@ class HTTPProxyHandler(BaseHTTPRequestHandler):
                 'users': len(USERS)
             }
             self.wfile.write(json.dumps(response).encode())
+            return
+        
+        # Проверяем аутентификацию для прокси-запросов
+        if not self._check_auth():
+            self._send_auth_required()
             return
         
         # Проксируем обычные HTTP запросы
@@ -138,22 +186,28 @@ class HTTPProxyHandler(BaseHTTPRequestHandler):
                 self.send_header('Content-Type', 'application/json')
                 self.end_headers()
                 self.wfile.write(json.dumps({'error': str(e)}).encode())
-        else:
-            # Проксируем POST запросы
-            try:
-                url = self.path if self.path.startswith('http') else f'http://{self.headers.get("Host")}{self.path}'
-                content_length = int(self.headers.get('Content-Length', 0))
-                post_data = self.rfile.read(content_length)
-                
-                req = urllib.request.Request(url, data=post_data, headers=dict(self.headers))
-                with urllib.request.urlopen(req) as response:
-                    self.send_response(response.status)
-                    for key, value in response.headers.items():
-                        self.send_header(key, value)
-                    self.end_headers()
-                    self.wfile.write(response.read())
-            except Exception as e:
-                self.send_error(500, str(e))
+            return
+        
+        # Проверяем аутентификацию для прокси-запросов
+        if not self._check_auth():
+            self._send_auth_required()
+            return
+        
+        # Проксируем POST запросы
+        try:
+            url = self.path if self.path.startswith('http') else f'http://{self.headers.get("Host")}{self.path}'
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length)
+            
+            req = urllib.request.Request(url, data=post_data, headers=dict(self.headers))
+            with urllib.request.urlopen(req) as response:
+                self.send_response(response.status)
+                for key, value in response.headers.items():
+                    self.send_header(key, value)
+                self.end_headers()
+                self.wfile.write(response.read())
+        except Exception as e:
+            self.send_error(500, str(e))
     
     def log_message(self, format, *args):
         # Логируем только ошибки
